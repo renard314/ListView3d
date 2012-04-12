@@ -23,7 +23,5 @@ public class MTCRichGraphicsActivity extends Activity {
         final ListView list = (ListView) findViewById(R.id.list3d);
         list.setDivider( null ); 
         list.setAdapter(adapter);
-        
-        
     }
 }

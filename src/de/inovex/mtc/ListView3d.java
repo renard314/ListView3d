@@ -10,7 +10,6 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.util.AttributeSet;
 import android.view.View;
-import android.view.animation.Transformation;
 import android.widget.ListView;
 
 public class ListView3d extends ListView {
@@ -27,89 +26,81 @@ public class ListView3d extends ListView {
 	private static final int MAX_INTENSITY = 0xFF;
 
 	private final Camera mCamera = new Camera();
-	private final Matrix mMatrix = new Matrix();
+	private final Matrix mMatrix = new Matrix();	
 	/** Paint object to draw with */
-	private Paint mPaint;
-
-	private final Transformation mTransformation;
+	private final Paint mPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
 
 	public ListView3d(Context context, AttributeSet attrs) {
 		super(context, attrs);
-		if (!isInEditMode()) {
-			setStaticTransformationsEnabled(true);
-			mTransformation = new Transformation();
-			mTransformation.setTransformationType(Transformation.TYPE_MATRIX);
-		} else {
-			mTransformation = null;
-		}		
+		//anti aliasing wont work with hardware acceleration
+		//thats why the icons have a one pixel wide transparent border 
+		mPaint.setAntiAlias(true);
 	}
+	
 	
 	@Override
-	protected boolean getChildStaticTransformation(View child, Transformation t) {
-		mTransformation.getMatrix().reset();
-		final float scale = 1-((float)getHeight()/child.getTop());
-		final float px = child.getLeft() + (child.getWidth()) / 2;
-		final float py = child.getTop() + (child.getHeight()) / 2;
-		mTransformation.getMatrix().postScale(scale, scale, px, py);
-		t.compose(mTransformation);
-		return true;
+	protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
+		Bitmap bitmap = getChildDrawingCache(child);
+		// (top,left) is the pixel position of the child inside the list 
+		final int top = child.getTop();
+		final int left = child.getLeft();
+		// center point of child
+		final int childCenterY = child.getHeight() / 2;
+		final int childCenterX = child.getWidth() / 2;
+		//center of list
+		final int parentCenterY = getHeight() / 2;
+		//center point of child relative to list
+		final int absChildCenterY = child.getTop() + childCenterY;
+		//distance of child center to the list center
+		final int distanceY = parentCenterY - absChildCenterY;
+		//radius of imaginary cirlce
+		final int r = getHeight() / 2;
+		
+		prepareMatrix(mMatrix, distanceY, r);
+
+		mMatrix.preTranslate(-childCenterX, -childCenterY);
+		mMatrix.postTranslate(childCenterX, childCenterY);
+		mMatrix.postTranslate(left, top);
+		
+		canvas.drawBitmap(bitmap, mMatrix, mPaint);
+		return false;
+
 	}
 	
 	
-//
-//	@Override
-//	protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
-//		// get top left coordinates
-//		final int top = child.getTop();
-//		final int left = child.getLeft();
-//		Bitmap bitmap = child.getDrawingCache();
-//		if (bitmap == null) {
-//			child.setDrawingCacheEnabled(true);
-//			child.buildDrawingCache();
-//			bitmap = child.getDrawingCache();
-//		}
-//
-//		final int centerY = child.getHeight() / 2;
-//		final int centerX = child.getWidth() / 2;
-//		final int radius = getHeight() / 2;
-//		final int absParentCenterY = getTop() + getHeight() / 2;
-//		final int absChildCenterY = child.getTop() + centerX;
-//		final int distanceY = absParentCenterY - absChildCenterY;
-//		final int absDistance = Math.min(radius, Math.abs(distanceY));
-//
-//		final float translateZ = (float) Math.sqrt((radius * radius) - (absDistance * absDistance));
-//
-//		double radians = Math.acos((float) absDistance / radius);
-//		double degree = 90 - (180 / Math.PI) * radians;
-//
-//		mCamera.save();
-//		mCamera.translate(0, 0, radius - translateZ);
-//		mCamera.rotateX((float) degree); // remove this line..
-//		if (distanceY < 0) {
-//			degree = 360 - degree;
-//		}
-//		mCamera.rotateY((float) degree); // and change this to rotateX() to get a
-//											// wheel like effect
-//		mCamera.getMatrix(mMatrix);
-//		mCamera.restore();
-//
-//		// create and initialize the paint object
-//		if (mPaint == null) {
-//			mPaint = new Paint();
-//			mPaint.setAntiAlias(true);
-//			mPaint.setFilterBitmap(true);
-//		}
-//		//highlight elements in the middle
-//		mPaint.setColorFilter(calculateLight((float) degree));
-//
-//		mMatrix.preTranslate(-centerX, -centerY);
-//		mMatrix.postTranslate(centerX, centerY);
-//		mMatrix.postTranslate(left, top);
-//		canvas.drawBitmap(bitmap, mMatrix, mPaint);
-//		return false;
-//	}
-//	
-	
+	private void prepareMatrix(final Matrix outMatrix, int distanceY, int r){
+		//clip the distance
+		final int d = Math.min(r, Math.abs(distanceY));
+		//use circle formula
+		final float translateZ = (float) Math.sqrt((r * r) - (d * d));
+
+		//solve for t: d = r*cos(t)
+		double radians = Math.acos((float) d / r);
+		double degree = 90 - (180 / Math.PI) * radians;
+
+		mCamera.save();
+		mCamera.translate(0, 0, r-translateZ);
+		mCamera.rotateX((float) degree); 
+		if (distanceY < 0) {
+			degree = 360 - degree;
+		}
+		mCamera.rotateY((float) degree);
+		mCamera.getMatrix(outMatrix);
+		mCamera.restore();
+		
+		// highlight elements in the middle
+		mPaint.setColorFilter(calculateLight((float) degree));
+	}
+
+	private Bitmap getChildDrawingCache(final View child){
+		Bitmap bitmap = child.getDrawingCache();
+		if (bitmap == null) {
+			child.setDrawingCacheEnabled(true);
+			child.buildDrawingCache();
+			bitmap = child.getDrawingCache();
+		}
+		return bitmap;
+	}	
 
 	private LightingColorFilter calculateLight(final float rotation) {
 		final double cosRotation = Math.cos(Math.PI * rotation / 180);
